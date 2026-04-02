@@ -72,6 +72,23 @@ class SessionManager:
             return None
         return self.questions[self.current_index]
 
+    def question_for_display(
+        self,
+        answer_submitted: bool,
+        last_record: AnswerRecord | None = None,
+    ) -> "MCQuestion | None":
+        """Return the question that should be displayed in the exam UI.
+
+        When feedback is being shown after submission, the UI should keep showing
+        the just-answered question from last_record.question_index, even though
+        current_index already points at the next question.
+        """
+        if answer_submitted and last_record is not None:
+            idx = last_record.question_index
+            if 0 <= idx < self.total_questions:
+                return self.questions[idx]
+        return self.current_question
+
     @property
     def answered_count(self) -> int:
         return len(self.answers)

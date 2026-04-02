@@ -403,8 +403,21 @@ def render_exam() -> None:
         st.rerun()
         return
 
-    q = session.current_question
-    q_num = session.current_index + 1
+    answer_submitted: bool = st.session_state.answer_submitted
+    last_record = st.session_state.last_record
+    q = session.question_for_display(
+        answer_submitted=answer_submitted,
+        last_record=last_record,
+    )
+    if q is None:
+        st.session_state.mode = SessionState.RESULTS
+        st.rerun()
+        return
+    q_num = (
+        (last_record.question_index + 1)
+        if answer_submitted and last_record is not None
+        else (session.current_index + 1)
+    )
     total = session.total_questions
 
     # Header row: question counter + end exam button
@@ -431,8 +444,6 @@ def render_exam() -> None:
     st.caption(f"Topic area: *{q.topic}*")
     st.markdown("")
 
-    answer_submitted: bool = st.session_state.answer_submitted
-
     if not answer_submitted:
         # Radio: no default selection forces a conscious choice
         selected = st.radio(
@@ -458,7 +469,7 @@ def render_exam() -> None:
             st.rerun()
 
     else:
-        record = st.session_state.last_record
+        record = last_record
 
         # Render all options with colour-coded feedback
         for letter, text in q.options.items():
