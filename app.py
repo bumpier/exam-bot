@@ -101,6 +101,15 @@ def _init_state() -> None:
 _init_state()
 
 
+@st.cache_data(show_spinner=False)
+def _cached_pdf_payload(pdf_path_str: str) -> tuple[bytes, str]:
+    """Cache PDF bytes + data URL to avoid expensive re-encoding on every rerun."""
+    pdf_path = DATA_DIR / pdf_path_str
+    pdf_bytes = read_pdf_bytes(pdf_path)
+    data_url = build_inline_pdf_data_url(pdf_path)
+    return pdf_bytes, data_url
+
+
 def _reset() -> None:
     for key in ["session", "generator", "answer_submitted", "last_record", "_retake"]:
         st.session_state.pop(key, None)
@@ -221,7 +230,7 @@ def render_selection() -> None:
             )
             selected_pdf = next(p for p in pdf_files if p.name == selected_pdf_name)
             try:
-                pdf_bytes = read_pdf_bytes(selected_pdf)
+                pdf_bytes, data_url = _cached_pdf_payload(selected_pdf.name)
                 st.download_button(
                     label="Download selected PDF",
                     data=pdf_bytes,
@@ -229,12 +238,21 @@ def render_selection() -> None:
                     mime="application/pdf",
                     use_container_width=True,
                 )
-                data_url = build_inline_pdf_data_url(selected_pdf)
-                components.html(
-                    build_pdf_embed_html(data_url, height_px=700),
-                    height=730,
-                    scrolling=True,
+                show_inline = st.toggle(
+                    "Render inline preview",
+                    value=False,
+                    key="pdf_preview_inline_toggle",
+                    help=(
+                        "Inline preview can be heavy and may make the page less responsive. "
+                        "Leave off for faster interaction."
+                    ),
                 )
+                if show_inline:
+                    components.html(
+                        build_pdf_embed_html(data_url, height_px=700),
+                        height=730,
+                        scrolling=True,
+                    )
             except Exception as exc:
                 st.error(f"Could not open `{selected_pdf.name}`: {exc}")
 
