@@ -1,0 +1,23 @@
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# OS/editor temp files
+.DS_Store
+.cursor/*.log
+
+# Local runtime artifacts
+*.log
+chroma_db/

@@ -1,0 +1,23 @@
+{
+  "_comment": "Map human-readable book names to ChromaDB source metadata tags. The source_tag must exactly match the 'source' field stored during ingestion — it is derived from the PDF filename stem (before any '__' separator). Run scripts/inspect_db.py to see all source tags currently in the database. importance_filter can be 'High', 'Medium', 'Low', or null (all).",
+  "books": [
+    {
+      "display_name": "FSRE Study Guide — Part 1",
+      "source_tag": "FSRE (FRE 1) Study Guide",
+      "description": "Financial Services Regulatory Examinations (FRE 1) — core regulatory framework and compliance obligations.",
+      "importance_filter": null
+    },
+    {
+      "display_name": "FSRE Study Guide — Part 2",
+      "source_tag": "FSRE (FRE 2) Study Guide",
+      "description": "Financial Services Regulatory Examinations (FRE 2) — advanced regulatory topics and practical application.",
+      "importance_filter": null
+    },
+    {
+      "display_name": "MORT Unit 2 Study Guide 2025/26",
+      "source_tag": "MORT Unit 2 - Study Guide 202526",
+      "description": "Mortgage advice regulation, responsible lending, and suitability assessment for 2025/26.",
+      "importance_filter": null
+    }
+  ]
+}
