@@ -10,6 +10,7 @@ Three UI modes driven by st.session_state.mode:
 from __future__ import annotations
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.config import (
     APP_LOGIN_PASSWORD,
@@ -27,6 +28,7 @@ from src.core.auth import credentials_configured, validate_login
 from src.core.mcq_generator import MCQGenerator
 from src.core.pdf_reader import (
     build_inline_pdf_data_url,
+    build_pdf_embed_html,
     list_pdf_files,
     read_pdf_bytes,
 )
@@ -228,16 +230,10 @@ def render_selection() -> None:
                     use_container_width=True,
                 )
                 data_url = build_inline_pdf_data_url(selected_pdf)
-                st.markdown(
-                    (
-                        "<iframe "
-                        f"src='{data_url}' "
-                        "width='100%' "
-                        "height='700' "
-                        "style='border: 1px solid #ddd; border-radius: 8px;'>"
-                        "</iframe>"
-                    ),
-                    unsafe_allow_html=True,
+                components.html(
+                    build_pdf_embed_html(data_url, height_px=700),
+                    height=730,
+                    scrolling=True,
                 )
             except Exception as exc:
                 st.error(f"Could not open `{selected_pdf.name}`: {exc}")

@@ -3,7 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.core.pdf_reader import build_inline_pdf_data_url, list_pdf_files, read_pdf_bytes
+from src.core.pdf_reader import (
+    build_inline_pdf_data_url,
+    build_pdf_embed_html,
+    list_pdf_files,
+    read_pdf_bytes,
+)
 
 
 class TestPdfReader(unittest.TestCase):
@@ -37,6 +42,15 @@ class TestPdfReader(unittest.TestCase):
             path.write_bytes(payload)
 
             self.assertEqual(read_pdf_bytes(path), payload)
+
+    def test_build_pdf_embed_html_contains_object_and_iframe_fallback(self) -> None:
+        data_url = "data:application/pdf;base64,ZmFrZQ=="
+        html = build_pdf_embed_html(data_url)
+
+        self.assertIn("<object", html)
+        self.assertIn('type="application/pdf"', html)
+        self.assertIn(data_url, html)
+        self.assertIn("<iframe", html)
 
 
 if __name__ == "__main__":
