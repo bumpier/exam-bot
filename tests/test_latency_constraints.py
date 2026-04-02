@@ -85,6 +85,50 @@ class TestLatencyConstraints(unittest.TestCase):
             self.assertEqual(len(questions), 3)
             self.assertEqual(generator._llm.invoke.call_count, 1)
 
+    def test_generate_question_retries_when_output_not_grounded_in_source(self) -> None:
+        with (
+            patch("src.core.mcq_generator.LLM_PROVIDER", "ollama"),
+            patch("src.core.mcq_generator._get_llm"),
+            patch(
+                "src.core.mcq_generator.retrieve_chunks",
+                return_value=[
+                    {
+                        "document": (
+                            "The Money Laundering Regulations require firms to keep "
+                            "customer due diligence records for five years."
+                        ),
+                        "source": "source-a",
+                        "chapter": "2",
+                    }
+                ],
+            ),
+        ):
+            generator = mcq_generator.MCQGenerator()
+
+            class _Resp:
+                def __init__(self, content: str) -> None:
+                    self.content = content
+
+            generator._llm.invoke.side_effect = [
+                _Resp(
+                    '{"question":"What color is the compliance logo?",'
+                    '"options":{"A":"Blue","B":"Green","C":"Red","D":"Orange"},'
+                    '"correct_option":"A","explanation":"The logo policy states it is blue."}'
+                ),
+                _Resp(
+                    '{"question":"For how long must CDD records be retained?",'
+                    '"options":{"A":"1 year","B":"3 years","C":"5 years","D":"10 years"},'
+                    '"correct_option":"C",'
+                    '"explanation":"The regulations state CDD records must be kept for five years.",'
+                    '"evidence_quote":"keep customer due diligence records for five years"}'
+                ),
+            ]
+
+            question = generator.generate_question(source_tags=["source-a"])
+
+            self.assertEqual(question.correct_option, "C")
+            self.assertEqual(generator._llm.invoke.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
