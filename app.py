@@ -21,9 +21,15 @@ from src.config import (
     OLLAMA_MODEL,
     OPENAI_MODEL,
     load_books_config,
+    DATA_DIR,
 )
 from src.core.auth import credentials_configured, validate_login
 from src.core.mcq_generator import MCQGenerator
+from src.core.pdf_reader import (
+    build_inline_pdf_data_url,
+    list_pdf_files,
+    read_pdf_bytes,
+)
 from src.core.session_manager import SessionManager, SessionState
 from src.db.chroma_client import collection_size, list_unique_values
 
@@ -200,6 +206,41 @@ def render_selection() -> None:
             st.error(f"Could not connect to ChromaDB: {exc}")
 
     st.divider()
+
+    with st.expander("Read PDFs in data/", expanded=False):
+        pdf_files = list_pdf_files(DATA_DIR)
+        if not pdf_files:
+            st.caption("No PDF files found in `data/`.")
+        else:
+            selected_pdf_name = st.selectbox(
+                "Choose a PDF to preview",
+                options=[p.name for p in pdf_files],
+                key="pdf_preview_select",
+            )
+            selected_pdf = next(p for p in pdf_files if p.name == selected_pdf_name)
+            try:
+                pdf_bytes = read_pdf_bytes(selected_pdf)
+                st.download_button(
+                    label="Download selected PDF",
+                    data=pdf_bytes,
+                    file_name=selected_pdf.name,
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+                data_url = build_inline_pdf_data_url(selected_pdf)
+                st.markdown(
+                    (
+                        "<iframe "
+                        f"src='{data_url}' "
+                        "width='100%' "
+                        "height='700' "
+                        "style='border: 1px solid #ddd; border-radius: 8px;'>"
+                        "</iframe>"
+                    ),
+                    unsafe_allow_html=True,
+                )
+            except Exception as exc:
+                st.error(f"Could not open `{selected_pdf.name}`: {exc}")
 
     # Load books from config
     books = load_books_config()
