@@ -95,7 +95,7 @@ class TestLatencyConstraints(unittest.TestCase):
                     {
                         "document": (
                             "The Money Laundering Regulations require firms to keep "
-                            "customer due diligence records for five years."
+                            "customer due diligence records for 5 years."
                         ),
                         "source": "source-a",
                         "chapter": "2",
@@ -119,14 +119,60 @@ class TestLatencyConstraints(unittest.TestCase):
                     '{"question":"For how long must CDD records be retained?",'
                     '"options":{"A":"1 year","B":"3 years","C":"5 years","D":"10 years"},'
                     '"correct_option":"C",'
-                    '"explanation":"The regulations state CDD records must be kept for five years.",'
-                    '"evidence_quote":"keep customer due diligence records for five years"}'
+                    '"explanation":"The regulations state CDD records must be kept for 5 years.",'
+                    '"evidence_quote":"keep customer due diligence records for 5 years"}'
                 ),
             ]
 
             question = generator.generate_question(source_tags=["source-a"])
 
             self.assertEqual(question.correct_option, "C")
+            self.assertEqual(generator._llm.invoke.call_count, 2)
+
+    def test_generate_question_retries_when_correct_option_not_in_source(self) -> None:
+        with (
+            patch("src.core.mcq_generator.LLM_PROVIDER", "ollama"),
+            patch("src.core.mcq_generator._get_llm"),
+            patch(
+                "src.core.mcq_generator.retrieve_chunks",
+                return_value=[
+                    {
+                        "document": (
+                            "Customer due diligence records must be retained for 5 years "
+                            "from the end of the business relationship."
+                        ),
+                        "source": "source-a",
+                        "chapter": "2",
+                    }
+                ],
+            ),
+        ):
+            generator = mcq_generator.MCQGenerator()
+
+            class _Resp:
+                def __init__(self, content: str) -> None:
+                    self.content = content
+
+            generator._llm.invoke.side_effect = [
+                _Resp(
+                    '{"question":"How long should records be retained?",'
+                    '"options":{"A":"2 years","B":"5 years","C":"7 years","D":"10 years"},'
+                    '"correct_option":"C",'
+                    '"explanation":"The source says records must be retained for 5 years.",'
+                    '"evidence_quote":"records must be retained for 5 years"}'
+                ),
+                _Resp(
+                    '{"question":"How long should records be retained?",'
+                    '"options":{"A":"2 years","B":"5 years","C":"7 years","D":"10 years"},'
+                    '"correct_option":"B",'
+                    '"explanation":"The source says records must be retained for 5 years.",'
+                    '"evidence_quote":"records must be retained for 5 years"}'
+                ),
+            ]
+
+            question = generator.generate_question(source_tags=["source-a"])
+
+            self.assertEqual(question.correct_option, "B")
             self.assertEqual(generator._llm.invoke.call_count, 2)
 
 

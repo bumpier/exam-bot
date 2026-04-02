@@ -63,6 +63,12 @@ def _debug_log(
 # ---------------------------------------------------------------------------
 
 OPTION_LETTERS = ["A", "B", "C", "D"]
+STOPWORDS = {
+    "the", "and", "for", "from", "with", "that", "this", "into", "must",
+    "shall", "have", "has", "were", "been", "are", "was", "your", "their",
+    "under", "over", "than", "what", "when", "which", "where", "would",
+    "should", "could", "about", "after", "before", "across", "each",
+}
 
 COMPLIANCE_TOPICS = [
     "customer due diligence obligations",
@@ -123,12 +129,13 @@ class MCQuestion(BaseModel):
 # ---------------------------------------------------------------------------
 
 MCQ_SYSTEM_PROMPT = """Return only one JSON object with keys:
-question, options, correct_option, explanation.
+question, options, correct_option, explanation, evidence_quote.
 Rules:
 - Use only SOURCE_TEXT facts.
 - options must contain exactly A, B, C, D.
 - Exactly one correct option.
 - explanation <= 60 words and cite section/article if present.
+- evidence_quote must be an exact quote from SOURCE_TEXT (8-30 words) that proves the correct option.
 - No markdown, no prose before/after JSON."""
 
 MCQ_USER_PROMPT = """SOURCE TEXT (from compliance manual):
@@ -240,6 +247,65 @@ def _extract_json(text: str) -> dict[str, Any]:
         raise ValueError(f"Could not parse JSON from LLM response:\n{cleaned[:300]}") from exc
 
 
+def _normalise_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _content_tokens(text: str) -> set[str]:
+    words = re.findall(r"[a-zA-Z0-9]{4,}", text.lower())
+    return {w for w in words if w not in STOPWORDS}
+
+
+def _numbers_in_text(text: str) -> set[str]:
+    return set(re.findall(r"\d+(?:\.\d+)?", text))
+
+
+def _is_grounded_question(data: dict[str, Any], context: str) -> bool:
+    """Basic guardrail to reject answers that are not grounded in source text."""
+    options = data.get("options")
+    correct_option = str(data.get("correct_option", "")).strip().upper()
+    explanation = str(data.get("explanation", ""))
+    if not isinstance(options, dict) or correct_option not in OPTION_LETTERS:
+        return False
+
+    answer_text = str(options.get(correct_option, "")).strip()
+    if not answer_text:
+        return False
+
+    context_tokens = _content_tokens(context)
+    if not context_tokens:
+        return False
+
+    explanation_overlap = len(_content_tokens(explanation) & context_tokens)
+
+    evidence_quote = str(data.get("evidence_quote", "")).strip()
+    quote_present = False
+    if evidence_quote:
+        quote_norm = _normalise_text(evidence_quote)
+        context_norm = _normalise_text(context)
+        quote_present = quote_norm in context_norm
+        if not quote_present:
+            quote_tokens = _content_tokens(evidence_quote)
+            if quote_tokens:
+                overlap = len(quote_tokens & context_tokens)
+                quote_present = overlap >= max(3, len(quote_tokens) // 2)
+    answer_tokens = _content_tokens(answer_text)
+    answer_supported = False
+    if answer_tokens:
+        answer_overlap = len(answer_tokens & context_tokens)
+        answer_supported = answer_overlap >= max(1, len(answer_tokens) // 2)
+    answer_numbers = _numbers_in_text(answer_text)
+    context_numbers = _numbers_in_text(context)
+    numbers_supported = answer_numbers.issubset(context_numbers)
+
+    return (
+        explanation_overlap >= 2
+        and quote_present
+        and answer_supported
+        and numbers_supported
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generator
 # ---------------------------------------------------------------------------
@@ -291,69 +357,89 @@ class MCQGenerator:
                 "Make sure the books are ingested into ChromaDB."
             )
 
-        # Use the single most relevant chunk as context
-        best_chunk = chunks[0]
-        context = best_chunk["document"]
-        source = best_chunk["source"]
-        chapter = best_chunk["chapter"]
+        max_attempts = min(max(len(chunks) * 2, 2), 6)
+        last_error: Exception | None = None
 
-        # Build the prompt
-        full_prompt = (
-            MCQ_SYSTEM_PROMPT
-            + "\n\n"
-            + MCQ_USER_PROMPT.format(context=context, topic=topic)
-        )
-        response = self._llm.invoke(full_prompt)
-        raw_response = response.content if hasattr(response, "content") else str(response)
-        # region agent log
-        _debug_log(
-            hypothesis_id="H4",
-            location="src/core/mcq_generator.py:generate_question",
-            message="Received raw LLM response",
-            data={
-                "topic": topic,
-                "response_preview": str(raw_response)[:250],
-                "response_len": len(str(raw_response)),
-            },
-        )
-        # endregion
+        for i in range(max_attempts):
+            chunk = chunks[i % len(chunks)]
+            context = chunk["document"]
+            source = chunk["source"]
+            chapter = chunk["chapter"]
 
-        # Parse and validate
-        data = _extract_json(raw_response)
-        # region agent log
-        _debug_log(
-            hypothesis_id="H1",
-            location="src/core/mcq_generator.py:generate_question",
-            message="Parsed LLM payload shape",
-            data={
-                "keys": list(data.keys()),
-                "options_type": type(data.get("options")).__name__,
-                "options_preview": str(data.get("options"))[:200],
-            },
-        )
-        # endregion
-        # region agent log
-        _debug_log(
-            hypothesis_id="H2",
-            location="src/core/mcq_generator.py:generate_question",
-            message="Parsed correct_option payload",
-            data={
-                "correct_option_type": type(data.get("correct_option")).__name__,
-                "correct_option_value": str(data.get("correct_option"))[:120],
-            },
-        )
-        # endregion
-        question = MCQuestion(
-            question=data["question"],
-            options=data["options"],
-            correct_option=data["correct_option"],
-            explanation=data["explanation"],
-            source=source,
-            chapter=chapter,
-            source_text=context,
-            topic=topic,
-        )
-        return question
+            full_prompt = (
+                MCQ_SYSTEM_PROMPT
+                + "\n\n"
+                + MCQ_USER_PROMPT.format(context=context, topic=topic)
+            )
+            response = self._llm.invoke(full_prompt)
+            raw_response = response.content if hasattr(response, "content") else str(response)
+            _debug_log(
+                hypothesis_id="H4",
+                location="src/core/mcq_generator.py:generate_question",
+                message="Received raw LLM response",
+                data={
+                    "topic": topic,
+                    "attempt": i + 1,
+                    "response_preview": str(raw_response)[:250],
+                    "response_len": len(str(raw_response)),
+                },
+            )
+
+            try:
+                data = _extract_json(raw_response)
+                _debug_log(
+                    hypothesis_id="H1",
+                    location="src/core/mcq_generator.py:generate_question",
+                    message="Parsed LLM payload shape",
+                    data={
+                        "attempt": i + 1,
+                        "keys": list(data.keys()),
+                        "options_type": type(data.get("options")).__name__,
+                        "options_preview": str(data.get("options"))[:200],
+                    },
+                )
+                _debug_log(
+                    hypothesis_id="H2",
+                    location="src/core/mcq_generator.py:generate_question",
+                    message="Parsed correct_option payload",
+                    data={
+                        "attempt": i + 1,
+                        "correct_option_type": type(data.get("correct_option")).__name__,
+                        "correct_option_value": str(data.get("correct_option"))[:120],
+                    },
+                )
+
+                if not _is_grounded_question(data, context):
+                    raise ValueError("Generated question was not grounded in SOURCE_TEXT.")
+
+                return MCQuestion(
+                    question=data["question"],
+                    options=data["options"],
+                    correct_option=data["correct_option"],
+                    explanation=data["explanation"],
+                    source=source,
+                    chapter=chapter,
+                    source_text=context,
+                    topic=topic,
+                )
+            except (ValueError, KeyError) as exc:
+                last_error = exc
+                _debug_log(
+                    hypothesis_id="H6",
+                    location="src/core/mcq_generator.py:generate_question",
+                    message="Rejected generation attempt",
+                    data={
+                        "attempt": i + 1,
+                        "topic": topic,
+                        "source": source,
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+
+        raise ValueError(
+            "Failed to generate a grounded question from retrieved source text."
+        ) from last_error
 
     def generate_quiz(
         self,
