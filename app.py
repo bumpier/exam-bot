@@ -15,6 +15,7 @@ import streamlit.components.v1 as components
 from src.config import (
     APP_LOGIN_PASSWORD,
     APP_LOGIN_USERNAME,
+    DATA_DIR,
     DEFAULT_QUESTION_COUNT,
     LLM_PROVIDER,
     MAX_QUESTION_COUNT,
@@ -22,7 +23,6 @@ from src.config import (
     OLLAMA_MODEL,
     OPENAI_MODEL,
     load_books_config,
-    DATA_DIR,
 )
 from src.core.auth import credentials_configured, validate_login
 from src.core.mcq_generator import MCQGenerator
@@ -134,7 +134,9 @@ def _generate_quiz_with_progress(
 
     for i in range(num_questions):
         status.info(f"Generating question {i + 1}/{num_questions}…")
-        q = generator.generate_question(source_tags=source_tags, used_topics=used_topics)
+        q = generator.generate_question(
+            source_tags=source_tags, used_topics=used_topics
+        )
         questions.append(q)
         used_topics.add(q.topic)
         progress.progress((i + 1) / num_questions)
@@ -198,7 +200,11 @@ def render_selection() -> None:
 
     st.divider()
 
-    with st.expander("download selected pdfs", expanded=False):
+    st.write(
+        "In order to pass the exams, you must read and understand the following books:"
+    )
+
+    with st.expander("(Click to select a PDF and download it)", expanded=False):
         pdf_files = list_pdf_files(DATA_DIR)
         if not pdf_files:
             st.caption("No PDF files found in `data/`.")
@@ -252,8 +258,12 @@ def render_selection() -> None:
     except Exception:
         db_sources = set()
 
-    available_books = [b for b in books if not db_sources or b["source_tag"] in db_sources]
-    unavailable_books = [b for b in books if db_sources and b["source_tag"] not in db_sources]
+    available_books = [
+        b for b in books if not db_sources or b["source_tag"] in db_sources
+    ]
+    unavailable_books = [
+        b for b in books if db_sources and b["source_tag"] not in db_sources
+    ]
 
     if not available_books:
         st.warning(
@@ -282,7 +292,9 @@ def render_selection() -> None:
             selected_display_names.append(book["display_name"])
 
     if unavailable_books:
-        with st.expander(f"{len(unavailable_books)} book(s) configured but not yet ingested"):
+        with st.expander(
+            f"{len(unavailable_books)} book(s) configured but not yet ingested"
+        ):
             for b in unavailable_books:
                 st.caption(f"• {b['display_name']} (`{b['source_tag']}`)")
 
@@ -545,7 +557,11 @@ def render_results() -> None:
     with st.expander("Question-by-question review", expanded=False):
         for answer in session.answers:
             icon = "✅" if answer.is_correct else "❌"
-            verdict = "Correct" if answer.is_correct else f"Incorrect (correct: **{answer.correct_option}**)"
+            verdict = (
+                "Correct"
+                if answer.is_correct
+                else f"Incorrect (correct: **{answer.correct_option}**)"
+            )
             st.markdown(
                 f"{icon} **Q{answer.question_index + 1}** — "
                 f"{answer.question_text[:130]}…  \n"
