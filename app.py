@@ -33,7 +33,7 @@ from src.core.pdf_reader import (
     read_pdf_bytes,
 )
 from src.core.session_manager import SessionManager, SessionState
-from src.db.chroma_client import collection_size, list_unique_values
+from src.db.chroma_client import list_unique_values
 
 # ---------------------------------------------------------------------------
 # Page config (must be first Streamlit call)
@@ -196,29 +196,9 @@ def render_selection() -> None:
         "choose how many questions you want, and start your exam."
     )
 
-    # Database health check
-    with st.expander("Database status", expanded=False):
-        try:
-            size = collection_size()
-            loaded_sources = list_unique_values("source")
-            if size == 0:
-                st.warning(
-                    "The vector database is empty.  \n"
-                    "Drop PDF files into **./data/** and run:  \n"
-                    "```\npython scripts/ingest_pdfs.py\n```"
-                )
-            else:
-                st.success(
-                    f"**{size:,}** chunks loaded across "
-                    f"**{len(loaded_sources)}** source(s)."
-                )
-                st.caption("Sources in DB: " + ", ".join(f"`{s}`" for s in loaded_sources))
-        except Exception as exc:
-            st.error(f"Could not connect to ChromaDB: {exc}")
-
     st.divider()
 
-    with st.expander("Read PDFs in data/", expanded=False):
+    with st.expander("download selected pdfs", expanded=False):
         pdf_files = list_pdf_files(DATA_DIR)
         if not pdf_files:
             st.caption("No PDF files found in `data/`.")
