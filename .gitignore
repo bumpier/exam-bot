@@ -21,3 +21,6 @@ venv/
 # Local runtime artifacts
 *.log
 chroma_db/
+/data/
+
+/data
